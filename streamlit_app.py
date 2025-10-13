@@ -138,7 +138,6 @@ with st.sidebar:
         "- העלי Excel עם העמודות **'חשבונית'** ו-**'שם לקוח'**\n"
         "- לחצי **התחל פיצול** לקבלת ZIP"
     )
-    st.caption("אין לוגו. מראה נקי ומקצועי בסגנון Reiz.")
 
 # =========================
 # Header
@@ -245,3 +244,4 @@ if start:
 # Footer credit
 # =========================
 st.markdown('<div class="footer">מתוכנן על ידי ילנה זמליאנסקי</div>', unsafe_allow_html=True)
+
