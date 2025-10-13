@@ -1,276 +1,247 @@
-import re
-import os
-import io
-import time
-import pandas as pd
 import streamlit as st
+import pandas as pd
 from PyPDF2 import PdfReader, PdfWriter
+import io, zipfile, re, unicodedata
+from time import sleep
 
-# =============== THEME / CSS ===============
+# =========================
+# Page config (Reiz-like clean UI)
+# =========================
 st.set_page_config(
-    page_title="פיצול חשבוניות ושינוי שמות",
-    page_icon="📄",
-    layout="centered",
+    page_title="פיצול חשבוניות · שינוי שמות",
+    page_icon="🧾",
+    layout="centered"
 )
 
-PRIMARY = "#2f9e9a"     # טורקיז בסגנון RISE
-PRIMARY_DARK = "#257c79"
-MUTED = "#6b7d87"
-BG_SOFT = "#f7fbfb"
-BORDER = "#e6f2f1"
+REIZ_CSS = """
+<style>
+:root{
+  --txt:#0F172A;          /* main text */
+  --muted:#64748B;        /* secondary */
+  --line:#E5E7EB;         /* borders */
+  --bg:#FFFFFF;           /* page */
+  --card:#FFFFFF;         /* cards */
+  --primary:#3B82F6;      /* Reiz-like blue */
+  --primary-2:#1D4ED8;
+  --ok:#059669;
+  --warn:#D97706;
+  --err:#DC2626;
+}
+html, body, [data-testid="stAppViewContainer"]{
+  color:var(--txt);
+  background:var(--bg);
+  font-variant-ligatures:none;
+}
+.block-container{ max-width: 880px; }
 
-st.markdown(
-    f"""
-    <style>
-    html, body, [class*="css"]  {{ font-family: Heebo, Rubik, Alef, Arial, sans-serif; }}
-    .appview-container {{
-        background: white;
-    }}
+/* Title */
+.h-title{
+  font-weight: 800; letter-spacing: .2px;
+  font-size: 2.0rem; margin:.2rem 0 .7rem 0;
+  color:var(--txt);
+}
+.h-sub{ color:var(--muted); margin:-.2rem 0 1.2rem 0; }
 
-    /* כותרת עליונה */
-    .rise-hero {{
-        background: linear-gradient(180deg, {BG_SOFT}, #ffffff 60%);
-        border-bottom: 1px solid {BORDER};
-        padding: 24px 18px 14px;
-        text-align: center;
-    }}
-    .rise-title {{
-        color: #0d3c40;
-        font-weight: 800;
-        font-size: 38px;
-        letter-spacing: 0.2px;
-        margin: 0 0 6px 0;
-    }}
-    .rise-sub {{
-        color: {MUTED};
-        font-size: 16px;
-        margin-top: -6px;
-    }}
+/* Card */
+.card{
+  border:1px solid var(--line);
+  background:var(--card);
+  border-radius: 14px; padding: 18px;
+}
 
-    /* "תכונות" בסגנון צ'יפים */
-    .feature-card {{
-        background: white;
-        border: 1px solid {BORDER};
-        border-radius: 18px;
-        padding: 18px 14px;
-        text-align: center;
-        box-shadow: 0 6px 14px rgba(47,158,154,0.06);
-        transition: transform .15s ease;
-    }}
-    .feature-card:hover {{ transform: translateY(-2px); }}
-    .feature-emoji {{
-        font-size: 32px;
-        line-height: 32px;
-        display: inline-block;
-        margin-bottom: 8px;
-        color: {PRIMARY};
-    }}
-    .feature-title {{
-        font-size: 18px;
-        font-weight: 700;
-        color: #0f5257;
-        margin: 0;
-    }}
+/* File uploader border */
+[data-testid="stFileUploader"] > div > div{
+  border: 1.5px dashed var(--line);
+}
 
-    /* תיבות קלט */
-    .stTextInput > div > div > input,
-    .stTextArea textarea {{
-        border-radius: 12px !important;
-        border: 1px solid {BORDER};
-        background: #ffffff;
-    }}
+/* Buttons */
+.stButton button, .stDownloadButton button{
+  background:var(--primary); color:white; border:none;
+  padding:.6rem 1rem; border-radius: 10px; font-weight:700;
+}
+.stButton button:hover, .stDownloadButton button:hover{
+  background:var(--primary-2); transition:.15s;
+}
 
-    /* מעלה קבצים */
-    .uploadedFile, .stFileUploaderDiv, .stFileUploader {{
-        border-radius: 14px !important;
-    }}
-    .st-emotion-cache-1dv6l7z, .stFileUploader {{
-        background: #ffffff !important;
-        border: 1px dashed {BORDER} !important;
-    }}
+/* Progress */
+[data-testid="stProgress"] div[data-testid="stThumbValue"]{ color:var(--muted) !important; }
 
-    /* כפתור ראשי */
-    .stButton > button {{
-        background: linear-gradient(180deg, {PRIMARY}, {PRIMARY_DARK});
-        color: white;
-        border: none;
-        padding: 12px 22px;
-        font-weight: 700;
-        border-radius: 14px;
-        box-shadow: 0 10px 18px rgba(47,158,154,0.22);
-        transition: all .15s ease;
-    }}
-    .stButton > button:hover {{
-        filter: brightness(1.05);
-        transform: translateY(-1px);
-        box-shadow: 0 12px 22px rgba(47,158,154,0.28);
-    }}
+/* Table */
+[data-testid="stDataFrame"] div[role="table"]{
+  border:1px solid var(--line); border-radius: 10px; overflow:hidden;
+}
 
-    /* התראות */
-    .stAlert {{
-        border-radius: 14px;
-        border: 1px solid {BORDER};
-    }}
+/* Footer */
+.footer{
+  margin-top:1rem; padding-top:.6rem;
+  border-top:1px solid var(--line); color:var(--muted);
+  font-size:.92rem; text-align:center;
+}
+</style>
+"""
+st.markdown(REIZ_CSS, unsafe_allow_html=True)
 
-    /* פוטר / קרדיט */
-    .rise-footer {{
-        border-top: 1px solid {BORDER};
-        margin-top: 26px;
-        padding-top: 14px;
-        text-align: center;
-        color: {MUTED};
-        font-size: 14px;
-    }}
-    .heart {{
-        color: #e25b73;
-        font-weight: 800;
-        padding: 0 2px;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# =========================
+# Helpers (same logic)
+# =========================
+def normalize_text(s: str) -> str:
+    if not isinstance(s, str):
+        s = str(s) if s is not None else ""
+    s = unicodedata.normalize("NFC", s)
+    return s.upper()
 
-# =============== HEADER ===============
-st.markdown(
-    """
-    <div class="rise-hero">
-        <h1 class="rise-title">פיצול חשבוניות ושינוי שמות PDF</h1>
-        <div class="rise-sub">מזהים את מספר החשבונית מתוך ה-PDF, משייכים שם לקוח מהאקסל, ושומרים אוטומטית בעיצוב נקי</div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-# =============== FEATURES ROW ===============
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.markdown('<div class="feature-card"><div class="feature-emoji">✅</div><p class="feature-title">אמינות</p></div>', unsafe_allow_html=True)
-with c2:
-    st.markdown('<div class="feature-card"><div class="feature-emoji">👩‍💻</div><p class="feature-title">צוות מקצועי</p></div>', unsafe_allow_html=True)
-with c3:
-    st.markdown('<div class="feature-card"><div class="feature-emoji">💎</div><p class="feature-title">שירותים איכותיים</p></div>', unsafe_allow_html=True)
-
-st.markdown("")
-
-# =============== HELPERS ===============
 def sanitize_filename(name: str) -> str:
-    """מנקה תווים לא חוקיים משמות קבצים"""
-    return re.sub(r'[\\\\/:*?"<>|]+', "_", name).strip()
+    if not isinstance(name, str):
+        name = str(name) if name is not None else ""
+    name = name.strip()
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    return name[:180]
 
-def find_invoice_number(text: str) -> str | None:
-    """מאתר מספר חשבונית לפי תבניות נפוצות"""
+def build_invoice_map(df: pd.DataFrame):
+    required = {"חשבונית", "שם לקוח"}
+    if not required.issubset(df.columns):
+        raise ValueError("קובץ ה-Excel חייב לכלול עמודות בשם 'חשבונית' ו-'שם לקוח'.")
+    mapping = {}
+    for _, r in df.iterrows():
+        inv_raw = str(r["חשבונית"]).strip()
+        cust_raw = str(r["שם לקוח"]).strip()
+        if not inv_raw:
+            continue
+        key = normalize_text(inv_raw)
+        mapping[key] = (inv_raw, sanitize_filename(cust_raw))
+    return mapping
+
+INVOICE_CANDIDATE_RE = re.compile(r"[A-Z]{1,4}\d{5,}")
+
+def find_invoice_in_page_text(text: str, invoice_map_keys):
     if not text:
         return None
-    for pat in (r'(OV\d{5,})', r'(חשבונית[:\s\-]*OV\d{5,})'):
-        m = re.search(pat, text, flags=re.IGNORECASE)
-        if m:
-            return re.search(r'(OV\d{5,})', m.group(0), re.IGNORECASE).group(1)
+    text_norm = normalize_text(text)
+    # חיפוש מועמדים אופייניים (OVxxxxx וכו')
+    for cand in INVOICE_CANDIDATE_RE.findall(text_norm):
+        if cand in invoice_map_keys:
+            return cand
+    # נפילה "חכמה": אם כל המפתח מופיע בטקסט
+    for key in invoice_map_keys:
+        if key in text_norm:
+            return key
     return None
 
-# =============== FORM / UI ===============
-with st.container():
-    st.subheader("טעינת קבצים")
-
-    pdf_file = st.file_uploader("בחר קובץ PDF שמכיל כמה חשבוניות בעמודים:", type=["pdf"])
-    excel_file = st.file_uploader("בחר קובץ Excel עם מיפוי עמודות: 'חשבונית' ו-'שם לקוח':", type=["xlsx"])
-
-    output_dir = st.text_input(
-        "📁 תיקיית פלט (למשל ‎C:\\Users\\user\\Desktop\\output‎ – לשמירה מקומית):",
-        help="כשמריצים מקומית – האפליקציה תשמור לשם. ב-Cloud אין גישה לתיקיות מקומיות."
+# =========================
+# Sidebar (short)
+# =========================
+with st.sidebar:
+    st.markdown("### איך משתמשים?")
+    st.write(
+        "- העלי PDF של החשבוניות\n"
+        "- העלי Excel עם העמודות **'חשבונית'** ו-**'שם לקוח'**\n"
+        "- לחצי **התחל פיצול** לקבלת ZIP"
     )
+    st.caption("אין לוגו. מראה נקי ומקצועי בסגנון Reiz.")
 
-    st.caption("טיפ: ודאי שבגיליון האקסל מופיעות בדיוק הכותרות: **חשבונית**, **שם לקוח** (כולל עברית מלאה).")
+# =========================
+# Header
+# =========================
+st.markdown('<div class="h-title">פיצול חשבוניות + שינוי שמות</div>', unsafe_allow_html=True)
+st.markdown('<div class="h-sub">זיהוי אוטומטי של מספר חשבונית בכל עמוד PDF והצלבה לשם לקוח מתוך Excel</div>', unsafe_allow_html=True)
 
-# =============== ACTION ===============
-run = st.button("התחל פיצול ✂️")
-log = st.empty()
+# =========================
+# Inputs
+# =========================
+with st.container():
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        pdf_file = st.file_uploader("📄 קובץ PDF", type=["pdf"])
+    with c2:
+        excel_file = st.file_uploader("📊 קובץ Excel (עמודות: 'חשבונית', 'שם לקוח')", type=["xlsx"])
+    st.markdown("</div>", unsafe_allow_html=True)
 
-if run:
+start = st.button("🚀 התחל פיצול")
+
+# =========================
+# Process
+# =========================
+if start:
     if not pdf_file or not excel_file:
-        st.error("❗ חובה לבחור גם PDF וגם Excel.")
+        st.error("חובה להעלות גם PDF וגם Excel.")
         st.stop()
 
-    try:
-        # קורא אקסל + בונה מיפוי חשבונית→שם
-        df = pd.read_excel(excel_file)
-        need_cols = {"חשבונית", "שם לקוח"}
-        if not need_cols.issubset(df.columns):
-            st.error("❌ קובץ האקסל חייב להכיל עמודות בשם: 'חשבונית' ו-'שם לקוח'.")
+    with st.spinner("מעבד..."):
+        sleep(0.2)
+        try:
+            df = pd.read_excel(excel_file)
+            inv_map = build_invoice_map(df)
+            if not inv_map:
+                st.error("לא נמצאו רשומות תקינות ב-Excel.")
+                st.stop()
+
+            reader = PdfReader(pdf_file)
+            total = len(reader.pages) if reader.pages else 0
+            results, used_names = [], set()
+            zip_buffer = io.BytesIO()
+            prog = st.progress(0, text="מעבד עמודים...")
+
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                for i in range(total):
+                    page = reader.pages[i]
+                    text = page.extract_text() or ""
+                    found_key = find_invoice_in_page_text(text, inv_map.keys())
+
+                    if found_key:
+                        inv_orig, cust_name = inv_map[found_key]
+                        base = f"{inv_orig}_{cust_name}"
+                    else:
+                        inv_orig, cust_name = "", ""
+                        base = f"UNMATCHED_page_{i+1}"
+
+                    file_base = sanitize_filename(base)
+                    final = file_base
+                    c = 2
+                    while final in used_names:
+                        final = sanitize_filename(f"{file_base}_{c}")
+                        c += 1
+                    used_names.add(final)
+
+                    writer = PdfWriter()
+                    writer.add_page(page)
+                    buf = io.BytesIO()
+                    writer.write(buf); buf.seek(0)
+                    zf.writestr(f"{final}.pdf", buf.getvalue())
+
+                    results.append({
+                        "עמוד": i+1,
+                        "חשבונית": inv_orig if inv_orig else "—",
+                        "שם לקוח": cust_name if cust_name else "—",
+                        "שם קובץ": f"{final}.pdf",
+                        "סטטוס": "התאמה נמצאה" if found_key else "לא זוהה קוד"
+                    })
+                    prog.progress((i+1)/max(total,1), text=f"מעבד עמוד {i+1} מתוך {total}")
+
+            zip_buffer.seek(0)
+
+        except Exception as e:
+            st.error(f"שגיאה: {e}")
             st.stop()
 
-        # מיפוי כסטנדרט (מפתח: OVxxxxx)
-        map_dict = {str(row["חשבונית"]).strip(): str(row["שם לקוח"]).strip()
-                    for _, row in df.iterrows()}
+    # =========================
+    # Output
+    # =========================
+    with st.container():
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.success("הפיצול הושלם! ניתן להוריד את כל הקבצים כ-ZIP.")
+        st.download_button(
+            "⬇️ הורדת ZIP",
+            data=zip_buffer.getvalue(),
+            file_name="split_invoices.zip",
+            mime="application/zip"
+        )
+        st.markdown("#### סיכום התאמות")
+        st.dataframe(pd.DataFrame(results), use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        # קורא PDF מה־UploadedFile
-        pdf_bytes = io.BytesIO(pdf_file.read())
-        reader = PdfReader(pdf_bytes)
-
-        # יוצר תיקייה אם נדרש (רק כשמריצים מקומית)
-        save_local = bool(output_dir.strip())
-        if save_local:
-            os.makedirs(output_dir, exist_ok=True)
-
-        saved = 0
-        progress = st.progress(0.0, text="מתחיל בפיצול...")
-
-        for i, page in enumerate(reader.pages):
-            text = page.extract_text() or ""
-            inv = find_invoice_number(text)
-
-            # השמטת עמודים ללא זיהוי חשבונית
-            if not inv:
-                log.info(f"עמוד {i+1}: לא זוהה מספר חשבונית – דילוג.")
-                continue
-
-            customer = map_dict.get(inv, "").strip()
-            if not customer:
-                customer = "ללא_שם"
-
-            # שם קובץ
-            filename = sanitize_filename(f"{inv}_{customer}.pdf")
-
-            # כותב עמוד בודד
-            writer = PdfWriter()
-            writer.add_page(page)
-
-            if save_local:
-                path = os.path.join(output_dir, filename)
-                with open(path, "wb") as f:
-                    writer.write(f)
-            else:
-                # במצב ללא תיקייה לוקאלית – מספק הורדה מיידית לעמוד-עמוד
-                buf = io.BytesIO()
-                writer.write(buf)
-                st.download_button(
-                    label=f"⬇️ הורדה: {filename}",
-                    data=buf.getvalue(),
-                    file_name=filename,
-                    mime="application/pdf",
-                    key=f"dl_{i}_{time.time()}"
-                )
-
-            saved += 1
-            progress.progress((i + 1) / len(reader.pages), text=f"מייצא עמוד {i+1} מתוך {len(reader.pages)}")
-
-        if saved == 0:
-            st.warning("לא נשמרו קבצים. ייתכן שמספרי החשבוניות לא זוהו או שאין התאמות בגיליון.")
-        else:
-            if save_local:
-                st.success(f"✅ בוצע! {saved} קבצים נשמרו אל: {output_dir}")
-            else:
-                st.success(f"✅ בוצע! {saved} קבצים זמינים להורדה כאן בעמוד.")
-
-    except Exception as e:
-        st.error(f"שגיאה: {e}")
-
-# =============== FOOTER CREDIT ===============
-st.markdown(
-    """
-    <div class="rise-footer">
-        מתוכנן ומעוצב <span class="heart">באהבה</span> על ידי <b>ילנה זמליאנסקי</b>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# =========================
+# Footer credit
+# =========================
+st.markdown('<div class="footer">מתוכנן על ידי ילנה זמליאנסקי</div>', unsafe_allow_html=True)
