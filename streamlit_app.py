@@ -132,9 +132,9 @@ def find_invoice_in_page_text(text: str, invoice_map_keys):
 # Sidebar (short)
 # =========================
 with st.sidebar:
-    st.markdown("### איך משתמשים?")
+    st.markdown("### ?איך משתמשים")
     st.write(
-        "- העלי PDF של החשבוניות\n"
+        "- תעלו קובץ פי די אף-חשבוניות\n"
         "- העלי Excel עם העמודות **'חשבונית'** ו-**'שם לקוח'**\n"
         "- לחצי **התחל פיצול** לקבלת ZIP"
     )
@@ -244,4 +244,5 @@ if start:
 # Footer credit
 # =========================
 st.markdown('<div class="footer">מתוכנן על ידי ילנה זמליאנסקי</div>', unsafe_allow_html=True)
+
 
