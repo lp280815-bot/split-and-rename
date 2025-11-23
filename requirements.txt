@@ -2,3 +2,8 @@ streamlit
 pandas
 PyPDF2
 openpyxl
+fastapi
+uvicorn[standard]
+openpyxl
+
+
