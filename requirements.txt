@@ -1,5 +1,6 @@
+uvicorn
 fastapi
-uvicorn[standard]
+
 pandas
 openpyxl
 streamlit
