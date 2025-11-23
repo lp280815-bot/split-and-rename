@@ -1,9 +1,6 @@
-streamlit
-pandas
-PyPDF2
-openpyxl
 fastapi
 uvicorn[standard]
+pandas
 openpyxl
-
-
+streamlit
+PyPDF2
